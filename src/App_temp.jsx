@@ -16,16 +16,19 @@ function App() {
    * This ensures IndexedDB is loaded BEFORE useReducer initializes
    */
   const initFunction = async () => {
-    console.log('Initializing reducer with IndexedDB state...');
     const loadedState = await loadState();
     
     // Validate loaded state
     if (validateState(loadedState)) {
-      console.log('State loaded from IndexedDB:', loadedState);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('State loaded from IndexedDB');
+      }
       isHydrated.current = true;
       return loadedState;
     } else {
-      console.log('Loaded state is invalid, using initial state');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Loaded state is invalid, using initial state');
+      }
       // State is invalid, ensure default board exists
       return initialState;
     }
@@ -38,12 +41,16 @@ function App() {
   useEffect(() => {
     // Only save if hydration is complete
     if (isHydrated.current) {
-      console.log('State changed, saving to IndexedDB...');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('State changed, saving to IndexedDB');
+      }
       saveState(state).catch(error => {
         console.error('Failed to save state to IndexedDB:', error);
       });
     } else {
-      console.log('State changed during hydration, skipping save');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('State changed during hydration, skipping save');
+      }
     }
   }, [state]);
 

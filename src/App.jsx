@@ -27,6 +27,7 @@ import { deleteState, loadState, saveState } from './storage/kanbanDB';
 import './App.css';
 
 const THEME_STORAGE_KEY = 'dimoflow-theme';
+const MAX_IMPORT_BYTES = 1024 * 1024;
 
 function App() {
   const [isHydrated, setIsHydrated] = useState(false);
@@ -102,13 +103,16 @@ function App() {
 
   useEffect(() => {
     async function hydrate() {
-      const loadedState = await loadState();
-      const validState = validateState(loadedState)
-        ? loadedState
-        : getValidState(loadedState);
-
-      dispatch({ type: 'HYDRATE_STATE', payload: validState });
-      setIsHydrated(true);
+      try {
+        const loadedState = await loadState();
+        const validState = getValidState(loadedState);
+        dispatch({ type: 'HYDRATE_STATE', payload: validState });
+      } catch (error) {
+        console.error('Failed to hydrate state:', error);
+        dispatch({ type: 'HYDRATE_STATE', payload: initialState });
+      } finally {
+        setIsHydrated(true);
+      }
     }
 
     hydrate();
@@ -498,21 +502,38 @@ function App() {
   const importStateFromFile = async (file) => {
     if (!file) return;
 
+    if (file.size > MAX_IMPORT_BYTES) {
+      setImportError('Import file is too large.');
+      setPendingImportState(null);
+      setIsImportConfirmOpen(true);
+      return;
+    }
+
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      if (!validateState(parsed)) {
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         setImportError('Imported file is not a valid Kanban backup.');
+        setPendingImportState(null);
+        setIsImportConfirmOpen(true);
+        return;
+      }
+
+      const normalized = getValidState(parsed);
+      if (!validateState(normalized)) {
+        setImportError('Imported file is not a valid Kanban backup.');
+        setPendingImportState(null);
         setIsImportConfirmOpen(true);
         return;
       }
 
       setImportError('');
-      setPendingImportState(getValidState(parsed));
+      setPendingImportState(normalized);
       setIsImportConfirmOpen(true);
     } catch (error) {
       console.error('Failed to import backup:', error);
       setImportError('Could not read that file. Please import a valid JSON backup.');
+      setPendingImportState(null);
       setIsImportConfirmOpen(true);
     } finally {
       if (fileInputRef.current) {

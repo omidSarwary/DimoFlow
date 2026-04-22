@@ -9,6 +9,24 @@ export const defaultColumns = [
 ];
 
 const createColumnsCopy = () => defaultColumns.map(column => ({ ...column }));
+const ALLOWED_PRIORITIES = ['low', 'medium', 'high'];
+export const APP_STATE_VERSION = 1;
+
+const createSafeId = (prefix = 'id') => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const isValidIsoDate = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return false;
+  }
+
+  return !Number.isNaN(new Date(value).getTime());
+};
 
 // Create initial board structure
 export const createInitialBoard = (id, name) => ({
@@ -20,6 +38,7 @@ export const createInitialBoard = (id, name) => ({
 
 // Initial state with multi-board structure
 export const initialState = {
+  version: APP_STATE_VERSION,
   boards: [
     {
       id: 'default-board',
@@ -55,55 +74,124 @@ export const UPDATE_TASK = "UPDATE_TASK";
  * @returns {boolean} - True if valid, false otherwise
  */
 export const validateState = (state) => {
-  // Check if state exists
-  if (!state || typeof state !== 'object') {
-    console.error('State is not an object:', state);
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
     return false;
   }
 
-  // Check if boards array exists and is an array
-  if (!state.boards || !Array.isArray(state.boards)) {
-    console.error('State missing or invalid boards array:', state);
+  if (!Array.isArray(state.boards) || state.boards.length === 0) {
     return false;
   }
 
-  // Check if activeBoardId exists and is a string
-  if (!state.activeBoardId || typeof state.activeBoardId !== 'string') {
-    console.error('State missing or invalid activeBoardId:', state);
+  if (typeof state.activeBoardId !== 'string' || !state.activeBoardId.trim()) {
     return false;
   }
 
-  // Validate each board
-  for (let i = 0; i < state.boards.length; i++) {
-    const board = state.boards[i];
-
-    // Check board has id
-    if (!board.id || typeof board.id !== 'string') {
-      console.error(`Board at index ${i} missing or invalid id:`, board);
+  for (const board of state.boards) {
+    if (!board || typeof board !== 'object' || Array.isArray(board)) {
       return false;
     }
 
-    // Check board has name
-    if (!board.name || typeof board.name !== 'string') {
-      console.error(`Board at index ${i} missing or invalid name:`, board);
+    if (typeof board.id !== 'string' || !board.id.trim()) {
       return false;
     }
 
-    // Check board has columns array
-    if (!board.columns || !Array.isArray(board.columns)) {
-      console.error(`Board at index ${i} missing or invalid columns:`, board);
+    if (typeof board.name !== 'string' || !board.name.trim()) {
       return false;
     }
 
-    // Check board has tasks array
-    if (!board.tasks || !Array.isArray(board.tasks)) {
-      console.error(`Board at index ${i} missing or invalid tasks:`, board);
+    if (!Array.isArray(board.columns) || !Array.isArray(board.tasks)) {
       return false;
+    }
+
+    for (const column of board.columns) {
+      if (!column || typeof column !== 'object' || Array.isArray(column)) {
+        return false;
+      }
+
+      if (typeof column.id !== 'string' || !column.id.trim()) {
+        return false;
+      }
+
+      if (typeof column.name !== 'string' || !column.name.trim()) {
+        return false;
+      }
+    }
+
+    for (const task of board.tasks) {
+      if (!task || typeof task !== 'object' || Array.isArray(task)) {
+        return false;
+      }
+
+      if (typeof task.id !== 'string' || !task.id.trim()) {
+        return false;
+      }
+
+      if (typeof task.title !== 'string') {
+        return false;
+      }
+
+      if (typeof task.description !== 'string') {
+        return false;
+      }
+
+      if (typeof task.columnId !== 'string' || !task.columnId.trim()) {
+        return false;
+      }
+
+      if (task.priority != null && !ALLOWED_PRIORITIES.includes(task.priority)) {
+        return false;
+      }
+
+      if (task.dueDate != null && task.dueDate !== '' && !isValidIsoDate(task.dueDate)) {
+        return false;
+      }
+
+      if (task.comments != null) {
+        if (!Array.isArray(task.comments)) {
+          return false;
+        }
+
+        for (const comment of task.comments) {
+          if (!comment || typeof comment !== 'object' || Array.isArray(comment)) {
+            return false;
+          }
+
+          if (typeof comment.id !== 'string' || !comment.id.trim()) {
+            return false;
+          }
+
+          if (typeof comment.text !== 'string') {
+            return false;
+          }
+
+          if (typeof comment.createdAt !== 'string' || !comment.createdAt.trim()) {
+            return false;
+          }
+        }
+      }
     }
   }
 
-  console.log('State validation passed:', state);
   return true;
+};
+
+export const normalizeComment = (comment) => {
+  if (!comment || typeof comment !== 'object' || Array.isArray(comment)) {
+    return null;
+  }
+
+  const text = typeof comment.text === 'string' ? comment.text.trim() : '';
+  if (!text) {
+    return null;
+  }
+
+  const createdAt = isValidIsoDate(comment.createdAt) ? comment.createdAt : new Date().toISOString();
+
+  return {
+    id: typeof comment.id === 'string' && comment.id.trim() ? comment.id : createSafeId('comment'),
+    text,
+    createdAt
+  };
 };
 
 export const getSortedColumns = (board) => {
@@ -134,14 +222,62 @@ export const normalizeColumns = (columns) => {
   }));
 };
 
-export const normalizeBoard = (board) => {
-  if (!board) {
-    return board;
+export const normalizeColumn = (column) => {
+  if (!column || typeof column !== 'object' || Array.isArray(column)) {
+    return null;
   }
 
   return {
-    ...board,
-    columns: normalizeColumns(board.columns)
+    id: typeof column.id === 'string' && column.id.trim() ? column.id : createSafeId('column'),
+    name: typeof column.name === 'string' && column.name.trim() ? column.name.trim() : 'Untitled',
+    order: Number.isFinite(column.order) ? column.order : 0
+  };
+};
+
+export const normalizeTask = (task) => {
+  if (!task || typeof task !== 'object' || Array.isArray(task)) {
+    return null;
+  }
+
+  const comments = Array.isArray(task.comments)
+    ? task.comments.map(normalizeComment).filter(Boolean)
+    : [];
+
+  return {
+    id: typeof task.id === 'string' && task.id.trim() ? task.id : createSafeId('task'),
+    title: typeof task.title === 'string' ? task.title : '',
+    description: typeof task.description === 'string' ? task.description : '',
+    columnId: typeof task.columnId === 'string' && task.columnId.trim() ? task.columnId : 'todo',
+    priority: ALLOWED_PRIORITIES.includes(task.priority) ? task.priority : 'low',
+    dueDate: isValidIsoDate(task.dueDate) ? task.dueDate : null,
+    comments,
+    createdAt: isValidIsoDate(task.createdAt) ? task.createdAt : new Date().toISOString(),
+    updatedAt: isValidIsoDate(task.updatedAt) ? task.updatedAt : new Date().toISOString()
+  };
+};
+
+export const normalizeBoard = (board) => {
+  if (!board || typeof board !== 'object' || Array.isArray(board)) {
+    return null;
+  }
+
+  const normalizedColumns = normalizeColumns(
+    Array.isArray(board.columns) ? board.columns.map(normalizeColumn).filter(Boolean) : []
+  );
+  const validColumnIds = normalizedColumns.map(column => column.id);
+  const fallbackColumnId = validColumnIds[0] || defaultColumns[0].id;
+  const normalizedTasks = Array.isArray(board.tasks)
+    ? board.tasks.map(normalizeTask).filter(Boolean).map(task => ({
+        ...task,
+        columnId: validColumnIds.includes(task.columnId) ? task.columnId : fallbackColumnId
+      }))
+    : [];
+
+  return {
+    id: typeof board.id === 'string' && board.id.trim() ? board.id : createSafeId('board'),
+    name: typeof board.name === 'string' && board.name.trim() ? board.name.trim() : 'Untitled Board',
+    columns: normalizedColumns.length > 0 ? normalizedColumns : createColumnsCopy(),
+    tasks: normalizedTasks
   };
 };
 
@@ -239,15 +375,14 @@ export function getValidState(state) {
   ) {
     return initialState;
   }
-  const validBoards = state.boards.filter(board =>
-    board &&
-    Array.isArray(board.columns) &&
-    Array.isArray(board.tasks)
-  ).map(normalizeBoard);
+  const validBoards = state.boards
+    .map(normalizeBoard)
+    .filter(Boolean);
   if (validBoards.length === 0) {
     return initialState;
   }
   return {
+    version: Number.isFinite(state.version) ? state.version : APP_STATE_VERSION,
     boards: validBoards,
     activeBoardId:
       state.activeBoardId &&

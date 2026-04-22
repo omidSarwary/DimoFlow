@@ -1,3 +1,5 @@
+import { getValidState, APP_STATE_VERSION } from '../state/kanbanState';
+
 /**
  * IndexedDB utility for persisting Kanban app state
  * 
@@ -34,7 +36,9 @@ const initDB = () => {
       // Create the store if it doesn't exist
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
-        console.log('Created object store:', STORE_NAME);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Created object store');
+        }
       }
     };
   });
@@ -45,17 +49,19 @@ const initDB = () => {
  * @param {Object} state - The complete application state to persist
  */
 const saveState = async (state) => {
-  console.log("SAVE STATE CALLED:", state);
   try {
     const db = await initDB();
+    const safeState = getValidState({ ...state, version: APP_STATE_VERSION });
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(state, STORE_KEY);
+      const request = store.put(safeState, STORE_KEY);
 
       request.onsuccess = () => {
-        console.log('State saved successfully to IndexedDB');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('State saved');
+        }
         resolve();
       };
 
@@ -76,7 +82,6 @@ const saveState = async (state) => {
  * @returns {Promise<Object>} - The stored state or null if not found
  */
 const loadState = async () => {
-  console.log("LOAD STATE CALLED");
   try {
     const db = await initDB();
 
@@ -87,9 +92,10 @@ const loadState = async () => {
 
       request.onsuccess = (event) => {
         const result = event.target.result;
-        console.log('State loaded from IndexedDB:', result ? 'Success' : 'Not found');
-        console.log("LOADED STATE FROM DB:", result);
-        resolve(result);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(result ? 'State loaded' : 'No saved state found');
+        }
+        resolve(result ? getValidState(result) : null);
       };
 
       request.onerror = (event) => {
@@ -118,7 +124,9 @@ const deleteState = async () => {
       const request = store.delete(STORE_KEY);
 
       request.onsuccess = () => {
-        console.log('State deleted successfully');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('State deleted');
+        }
         resolve(true);
       };
 
