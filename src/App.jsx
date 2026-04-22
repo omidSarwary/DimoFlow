@@ -27,6 +27,7 @@ import { deleteState, loadState, saveState } from './storage/kanbanDB';
 import './App.css';
 
 const THEME_STORAGE_KEY = 'dimoflow-theme';
+const ONBOARDING_STORAGE_KEY = 'dimoflow-onboarding-seen';
 const MAX_IMPORT_BYTES = 1024 * 1024;
 
 function App() {
@@ -40,6 +41,13 @@ function App() {
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isOnboardingVisible, setIsOnboardingVisible] = useState(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem(THEME_STORAGE_KEY) || 'light';
@@ -77,6 +85,20 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSidebarOpen]);
+
+  useEffect(() => {
+    if (!isOnboardingVisible) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleFinishOnboarding();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOnboardingVisible]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -142,6 +164,15 @@ function App() {
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [pendingImportState, setPendingImportState] = useState(null);
   const [importError, setImportError] = useState('');
+
+  const handleFinishOnboarding = () => {
+    setIsOnboardingVisible(false);
+    try {
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+    } catch {
+      // Ignore storage failures; onboarding can still close for this session.
+    }
+  };
 
   useEffect(() => {
     if (!isFilterBarOpen) return undefined;
@@ -591,6 +622,8 @@ function App() {
   }, [isTaskModalOpen]);
 
   useEffect(() => {
+    if (isOnboardingVisible) return undefined;
+
     function isEditableTarget(target) {
       if (!(target instanceof HTMLElement)) return false;
       return target.closest('input, textarea, select, [contenteditable="true"]') !== null;
@@ -643,10 +676,69 @@ function App() {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [canCreateTasks, isFilterBarOpen, isImportConfirmOpen, isResetConfirmOpen, isSidebarOpen, isTaskModalOpen]);
+  }, [canCreateTasks, isFilterBarOpen, isImportConfirmOpen, isOnboardingVisible, isResetConfirmOpen, isSidebarOpen, isTaskModalOpen]);
 
   return (
     <div className="app-shell">
+      {isOnboardingVisible && (
+        <div className="onboarding-backdrop" role="presentation">
+          <section
+            className="onboarding-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="onboarding-title"
+          >
+            <div className="onboarding-badge">Welcome</div>
+            <h1 id="onboarding-title">Welcome to DimoFlow</h1>
+            <p className="onboarding-lead">
+              DimoFlow is a local-first Kanban productivity system built to keep your work organized and private on this device.
+            </p>
+
+            <div className="onboarding-grid">
+              <section className="onboarding-card">
+                <h2>What it is</h2>
+                <p>Boards, tasks, comments, and settings all stay on your machine with IndexedDB-backed persistence.</p>
+              </section>
+              <section className="onboarding-card">
+                <h2>Core concepts</h2>
+                <ul>
+                  <li>Boards = workspaces</li>
+                  <li>Columns = workflow stages</li>
+                  <li>Tasks = work items</li>
+                </ul>
+              </section>
+              <section className="onboarding-card">
+                <h2>How to use it</h2>
+                <ul>
+                  <li>Create boards</li>
+                  <li>Add tasks</li>
+                  <li>Move tasks with drag and drop or buttons</li>
+                  <li>Use filters and themes</li>
+                </ul>
+              </section>
+              <section className="onboarding-card">
+                <h2>Shortcuts</h2>
+                <ul>
+                  <li><strong>/</strong> Search</li>
+                  <li><strong>N</strong> New task</li>
+                  <li><strong>E</strong> Edit mode</li>
+                  <li><strong>Esc</strong> Close panels</li>
+                </ul>
+              </section>
+            </div>
+
+            <div className="onboarding-actions">
+              <button type="button" className="topbar-primary-action" onClick={handleFinishOnboarding}>
+                Get Started
+              </button>
+              <button type="button" className="ghost-button" onClick={handleFinishOnboarding}>
+                Skip
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {isSidebarOpen && <div className="sidebar-scrim" onClick={closeSidebar} />}
 
       <header className="topbar">
