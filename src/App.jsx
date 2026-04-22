@@ -22,6 +22,7 @@ import {
   getActiveBoard,
   getSortedColumns
 } from './state/kanbanState';
+import { getVisibleTasks, hasActiveFilters, createDefaultFilters } from './utils/filters';
 import { deleteState, loadState, saveState } from './storage/kanbanDB';
 import './App.css';
 
@@ -33,6 +34,8 @@ function App() {
   const fileInputRef = useRef(null);
   const filterRef = useRef(null);
   const toggleBtnRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const taskTitleInputRef = useRef(null);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -43,6 +46,14 @@ function App() {
       return 'light';
     }
   });
+
+  // Centralized filter state (single source of truth)
+  const [filters, setFilters] = useState(createDefaultFilters());
+  
+  // Separate states for search: instant input + debounced filtering
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimeoutRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -73,6 +84,21 @@ function App() {
       console.error('Failed to save state:', error);
     });
   }, [state, isHydrated]);
+
+  // Debounce search effect - updates debouncedSearch 300ms after searchInput changes
+  useEffect(() => {
+    clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+    }, 300);
+
+    return () => clearTimeout(searchTimeoutRef.current);
+  }, [searchInput]);
+
+  // Update filters when debounced search changes
+  useEffect(() => {
+    setFilters(prev => ({ ...prev, search: debouncedSearch }));
+  }, [debouncedSearch]);
 
   useEffect(() => {
     async function hydrate() {
@@ -106,12 +132,12 @@ function App() {
   const [editingColumnId, setEditingColumnId] = useState(null);
   const [editingColumnName, setEditingColumnName] = useState('');
 
-  const [taskSearch, setTaskSearch] = useState('');
-  const [taskPriorityFilter, setTaskPriorityFilter] = useState('all');
-  const [taskDueFilter, setTaskDueFilter] = useState('all');
-  const [taskStatusFilter, setTaskStatusFilter] = useState('all');
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isFilterBarOpen, setIsFilterBarOpen] = useState(false);
+  const [isImportConfirmOpen, setIsImportConfirmOpen] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [pendingImportState, setPendingImportState] = useState(null);
+  const [importError, setImportError] = useState('');
 
   useEffect(() => {
     if (!isFilterBarOpen) return undefined;
@@ -178,14 +204,15 @@ function App() {
     }
   }, [activeBoardId, activeBoard, editingTaskId]);
 
+  // Validate that filter status column still exists, reset if not
   useEffect(() => {
-    if (taskStatusFilter === 'all') return;
+    if (filters.statusColumnId === 'all') return;
 
-    const statusStillExists = sortedColumns.some(column => column.id === taskStatusFilter);
+    const statusStillExists = sortedColumns.some(column => column.id === filters.statusColumnId);
     if (!statusStillExists) {
-      setTaskStatusFilter('all');
+      setFilters(prev => ({ ...prev, statusColumnId: 'all' }));
     }
-  }, [activeBoardId, sortedColumns, taskStatusFilter]);
+  }, [activeBoardId, sortedColumns, filters.statusColumnId]);
 
   const closeSidebar = () => setIsSidebarOpen(false);
   const openTaskModal = () => setIsTaskModalOpen(true);
@@ -232,6 +259,27 @@ function App() {
       type: REORDER_COLUMN,
       payload: { columnId, direction }
     });
+  };
+
+  // Update input immediately (no debounce)
+  const handleSearchChange = (value) => {
+    setSearchInput(value);
+  };
+
+  const handlePriorityFilterChange = (value) => {
+    setFilters(prev => ({ ...prev, priority: value }));
+  };
+
+  const handleDueFilterChange = (value) => {
+    setFilters(prev => ({ ...prev, dueDate: value }));
+  };
+
+  const handleStatusFilterChange = (value) => {
+    setFilters(prev => ({ ...prev, statusColumnId: value }));
+  };
+
+  const clearAllFilters = () => {
+    setFilters(createDefaultFilters());
   };
 
   const selectBoard = (boardId) => {
@@ -391,40 +439,9 @@ function App() {
     }));
   };
 
-  const getTaskDueStatus = (task) => {
-    if (!task.dueDate) return 'no-date';
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const taskDate = new Date(task.dueDate);
-    if (Number.isNaN(taskDate.getTime())) return 'no-date';
-    taskDate.setHours(0, 0, 0, 0);
-
-    if (taskDate.getTime() === today.getTime()) return 'today';
-    if (taskDate.getTime() < today.getTime()) return 'overdue';
-    return 'upcoming';
-  };
-
-  const filteredTasks = (activeBoard?.tasks || []).filter(task => {
-    const normalizedTitle = task.title.toLowerCase();
-    const searchTerm = taskSearch.trim().toLowerCase();
-    const matchesSearch = !searchTerm || normalizedTitle.includes(searchTerm);
-    const matchesPriority =
-      taskPriorityFilter === 'all' || task.priority === taskPriorityFilter;
-    const matchesDueDate =
-      taskDueFilter === 'all' || getTaskDueStatus(task) === taskDueFilter;
-    const matchesStatus =
-      taskStatusFilter === 'all' || task.columnId === taskStatusFilter;
-
-    return matchesSearch && matchesPriority && matchesDueDate && matchesStatus;
-  });
-
-  const hasActiveFilters =
-    taskSearch.trim() ||
-    taskPriorityFilter !== 'all' ||
-    taskDueFilter !== 'all' ||
-    taskStatusFilter !== 'all';
+  // Use centralized filter logic - single source of truth
+  const filteredTasks = getVisibleTasks(activeBoard?.tasks || [], filters);
+  const isFilterActive = hasActiveFilters(filters);
 
   const addTaskComment = (taskId) => {
     const text = commentDrafts[taskId] || '';
@@ -459,6 +476,25 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const summarizeImportState = (candidate) => {
+    const boardsList = Array.isArray(candidate?.boards) ? candidate.boards : [];
+    const boardCount = boardsList.length;
+    const columnCount = boardsList.reduce((count, board) => count + (Array.isArray(board?.columns) ? board.columns.length : 0), 0);
+    const taskCount = boardsList.reduce((count, board) => count + (Array.isArray(board?.tasks) ? board.tasks.length : 0), 0);
+    const commentCount = boardsList.reduce((count, board) => {
+      return count + (Array.isArray(board?.tasks)
+        ? board.tasks.reduce((taskTotal, task) => taskTotal + (Array.isArray(task?.comments) ? task.comments.length : 0), 0)
+        : 0);
+    }, 0);
+
+    return {
+      boardCount,
+      columnCount,
+      taskCount,
+      commentCount
+    };
+  };
+
   const importStateFromFile = async (file) => {
     if (!file) return;
 
@@ -466,16 +502,18 @@ function App() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (!validateState(parsed)) {
-        alert('Imported file is not a valid Kanban backup.');
+        setImportError('Imported file is not a valid Kanban backup.');
+        setIsImportConfirmOpen(true);
         return;
       }
 
-      const normalized = getValidState(parsed);
-      dispatch({ type: 'HYDRATE_STATE', payload: normalized });
-      closeSidebar();
+      setImportError('');
+      setPendingImportState(getValidState(parsed));
+      setIsImportConfirmOpen(true);
     } catch (error) {
       console.error('Failed to import backup:', error);
-      alert('Could not import that file.');
+      setImportError('Could not read that file. Please import a valid JSON backup.');
+      setIsImportConfirmOpen(true);
     } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -487,16 +525,104 @@ function App() {
     fileInputRef.current?.click();
   };
 
-  const handleResetApp = async () => {
-    const confirmed = window.confirm('Reset the entire app? This will remove all boards, tasks, and comments.');
-    if (!confirmed) return;
+  const confirmImportState = () => {
+    if (!pendingImportState) return;
 
-    await deleteState();
-    dispatch({ type: RESET_APP });
+    dispatch({ type: 'HYDRATE_STATE', payload: pendingImportState });
+    setPendingImportState(null);
+    setImportError('');
+    setIsImportConfirmOpen(false);
     closeSidebar();
   };
 
+  const cancelImportState = () => {
+    setPendingImportState(null);
+    setImportError('');
+    setIsImportConfirmOpen(false);
+  };
+
+  const handleResetApp = async () => {
+    setIsResetConfirmOpen(true);
+  };
+
+  const confirmResetApp = async () => {
+    await deleteState();
+    dispatch({ type: RESET_APP });
+    setIsResetConfirmOpen(false);
+    closeSidebar();
+  };
+
+  const cancelResetApp = () => {
+    setIsResetConfirmOpen(false);
+  };
+
   const canCreateTasks = sortedColumns.length > 0;
+  const importSummary = pendingImportState ? summarizeImportState(pendingImportState) : null;
+
+  useEffect(() => {
+    if (!isTaskModalOpen) return undefined;
+
+    const frameId = window.requestAnimationFrame(() => {
+      taskTitleInputRef.current?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isTaskModalOpen]);
+
+  useEffect(() => {
+    function isEditableTarget(target) {
+      if (!(target instanceof HTMLElement)) return false;
+      return target.closest('input, textarea, select, [contenteditable="true"]') !== null;
+    }
+
+    function handleGlobalShortcuts(event) {
+      const key = event.key.toLowerCase();
+      const typing = isEditableTarget(event.target);
+
+      if (key === 'escape') {
+        if (isTaskModalOpen || isSidebarOpen || isFilterBarOpen || isImportConfirmOpen || isResetConfirmOpen) {
+          event.preventDefault();
+          setIsTaskModalOpen(false);
+          setIsSidebarOpen(false);
+          setIsFilterBarOpen(false);
+          setIsImportConfirmOpen(false);
+          setIsResetConfirmOpen(false);
+          setPendingImportState(null);
+          setImportError('');
+        }
+        return;
+      }
+
+      if (isImportConfirmOpen || isResetConfirmOpen) return;
+
+      if (typing) return;
+
+      if (key === 'n') {
+        if (!canCreateTasks) return;
+        event.preventDefault();
+        setIsTaskModalOpen(true);
+        return;
+      }
+
+      if (key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        setIsFilterBarOpen(true);
+        window.requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select?.();
+        });
+        return;
+      }
+
+      if (key === 'e') {
+        event.preventDefault();
+        setIsEditMode(prev => !prev);
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [canCreateTasks, isFilterBarOpen, isImportConfirmOpen, isResetConfirmOpen, isSidebarOpen, isTaskModalOpen]);
 
   return (
     <div className="app-shell">
@@ -507,6 +633,7 @@ function App() {
           type="button"
           className="icon-button sidebar-toggle"
           onClick={() => setIsSidebarOpen(prev => !prev)}
+          title="Toggle sidebar (Esc)"
           aria-label="Toggle sidebar"
         >
           ☰
@@ -527,6 +654,7 @@ function App() {
           className="topbar-primary-action"
           onClick={openTaskModal}
           disabled={!canCreateTasks}
+          title="Add task (N)"
         >
           Add Task
         </button>
@@ -537,7 +665,7 @@ function App() {
           className={`topbar-filter-action ${isFilterBarOpen ? 'topbar-filter-action-active' : ''}`}
           onClick={toggleFilterBar}
           aria-label="Toggle filters"
-          title="Toggle filters"
+          title="Toggle filters (/)"
         >
           🎛
         </button>
@@ -678,6 +806,7 @@ function App() {
                   placeholder="Task title"
                   value={formData.title}
                   onChange={handleInputChange}
+                  ref={taskTitleInputRef}
                   required
                 />
                 <input
@@ -729,6 +858,87 @@ function App() {
           </div>
         )}
 
+        {isImportConfirmOpen && (
+          <div className="modal-backdrop" onClick={cancelImportState}>
+            <div className="task-modal data-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="panel-header">
+                <div>
+                  <div className="section-kicker">Import</div>
+                  <h2>{importError ? 'Import failed' : 'Confirm import'}</h2>
+                </div>
+                <button type="button" className="ghost-button" onClick={cancelImportState}>
+                  Close
+                </button>
+              </div>
+
+              {importError ? (
+                <div className="empty-column-state data-modal-message">
+                  <p>{importError}</p>
+                  <p>Choose another JSON backup to try again.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="data-preview">
+                    <div className="data-preview-item">
+                      <span>Boards</span>
+                      <strong>{importSummary?.boardCount || 0}</strong>
+                    </div>
+                    <div className="data-preview-item">
+                      <span>Columns</span>
+                      <strong>{importSummary?.columnCount || 0}</strong>
+                    </div>
+                    <div className="data-preview-item">
+                      <span>Tasks</span>
+                      <strong>{importSummary?.taskCount || 0}</strong>
+                    </div>
+                    <div className="data-preview-item">
+                      <span>Comments</span>
+                      <strong>{importSummary?.commentCount || 0}</strong>
+                    </div>
+                  </div>
+                  <p className="data-modal-copy">
+                    This will replace the current workspace with the imported backup.
+                  </p>
+                  <div className="modal-actions">
+                    <button type="button" className="ghost-button" onClick={cancelImportState}>Cancel</button>
+                    <button type="button" className="danger-button" onClick={confirmImportState}>
+                      Import backup
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isResetConfirmOpen && (
+          <div className="modal-backdrop" onClick={cancelResetApp}>
+            <div className="task-modal data-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="panel-header">
+                <div>
+                  <div className="section-kicker">Reset</div>
+                  <h2>Reset app data?</h2>
+                </div>
+                <button type="button" className="ghost-button" onClick={cancelResetApp}>
+                  Close
+                </button>
+              </div>
+
+              <div className="empty-column-state data-modal-message">
+                <p>This will remove all boards, columns, tasks, and comments.</p>
+                <p>The app will return to a clean starting state.</p>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="ghost-button" onClick={cancelResetApp}>Cancel</button>
+                <button type="button" className="danger-button" onClick={confirmResetApp}>
+                  Reset boards
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <section
           ref={filterRef}
           className={`filter-panel ${isFilterBarOpen ? 'filter-panel-open' : ''}`}
@@ -736,16 +946,17 @@ function App() {
         >
           <div className="compact-filter-bar">
             <input
+              ref={searchInputRef}
               id="task-search"
               type="text"
               placeholder="Search tasks..."
-              value={taskSearch}
-              onChange={(e) => setTaskSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => handleSearchChange(e.target.value)}
             />
             <select
               id="priority-filter"
-              value={taskPriorityFilter}
-              onChange={(e) => setTaskPriorityFilter(e.target.value)}
+              value={filters.priority}
+              onChange={(e) => handlePriorityFilterChange(e.target.value)}
             >
               <option value="all">Priority</option>
               <option value="low">Low</option>
@@ -754,8 +965,8 @@ function App() {
             </select>
             <select
               id="due-filter"
-              value={taskDueFilter}
-              onChange={(e) => setTaskDueFilter(e.target.value)}
+              value={filters.dueDate}
+              onChange={(e) => handleDueFilterChange(e.target.value)}
             >
               <option value="all">Due date</option>
               <option value="today">Today</option>
@@ -765,8 +976,8 @@ function App() {
             </select>
             <select
               id="status-filter"
-              value={taskStatusFilter}
-              onChange={(e) => setTaskStatusFilter(e.target.value)}
+              value={filters.statusColumnId}
+              onChange={(e) => handleStatusFilterChange(e.target.value)}
             >
               <option value="all">Status</option>
               {sortedColumns.map(column => {
@@ -778,16 +989,11 @@ function App() {
                 );
               })}
             </select>
-            {hasActiveFilters && (
+            {isFilterActive && (
               <button
                 type="button"
                 className="filter-clear-icon"
-                onClick={() => {
-                  setTaskSearch('');
-                  setTaskPriorityFilter('all');
-                  setTaskDueFilter('all');
-                  setTaskStatusFilter('all');
-                }}
+                onClick={clearAllFilters}
                 aria-label="Clear filters"
                 title="Clear filters"
               >
@@ -800,7 +1006,7 @@ function App() {
         <section className="board-area">
           {sortedColumns.length === 0 ? (
             <div className="empty-board-state">
-              <h3>No columns yet</h3>
+              <h3>No columns</h3>
               <p>Add a column from the sidebar to start organizing work.</p>
             </div>
           ) : (
@@ -891,7 +1097,7 @@ function App() {
 
                     {columnTasks.length === 0 ? (
                       <div className="empty-column-state">
-                        <p>No tasks yet</p>
+                        <p>No tasks</p>
                       </div>
                     ) : (
                       columnTasks.map(task => (
