@@ -114,3 +114,27 @@ export function createDefaultFilters() {
         statusColumnId: 'all'
     };
 }
+
+/**
+ * Get archived tasks from a board
+ * @param {Array} tasks - Array of task objects
+ * @returns {Array} - Filtered array of archived tasks
+ */
+export function getArchivedTasks(tasks) {
+    if (!Array.isArray(tasks)) return [];
+    return tasks.filter(task => task.archived === true).sort((a, b) => {
+        // Sort by archivedAt descending (most recent first)
+        if (!a.archivedAt || !b.archivedAt) return 0;
+        return new Date(b.archivedAt) - new Date(a.archivedAt);
+    });
+}
+
+/**
+ * Get active (non-archived) tasks from a board
+ * @param {Array} tasks - Array of task objects
+ * @returns {Array} - Filtered array of active tasks
+ */
+export function getActiveTasks(tasks) {
+    if (!Array.isArray(tasks)) return [];
+    return tasks.filter(task => task.archived !== true);
+}

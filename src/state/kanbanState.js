@@ -66,6 +66,8 @@ export const DELETE_COLUMN = "DELETE_COLUMN";
 export const RENAME_COLUMN = "RENAME_COLUMN";
 export const REORDER_COLUMN = "REORDER_COLUMN";
 export const UPDATE_TASK = "UPDATE_TASK";
+export const ARCHIVE_TASK = "ARCHIVE_TASK";
+export const RESTORE_TASK = "RESTORE_TASK";
 
 /**
  * Strict state validation function
@@ -252,7 +254,11 @@ export const normalizeTask = (task) => {
     dueDate: isValidIsoDate(task.dueDate) ? task.dueDate : null,
     comments,
     createdAt: isValidIsoDate(task.createdAt) ? task.createdAt : new Date().toISOString(),
-    updatedAt: isValidIsoDate(task.updatedAt) ? task.updatedAt : new Date().toISOString()
+    updatedAt: isValidIsoDate(task.updatedAt) ? task.updatedAt : new Date().toISOString(),
+    // Archive system fields
+    archived: task.archived === true,
+    archivedAt: isValidIsoDate(task.archivedAt) ? task.archivedAt : null,
+    previousColumnId: typeof task.previousColumnId === 'string' && task.previousColumnId.trim() ? task.previousColumnId : null
   };
 };
 
@@ -268,9 +274,9 @@ export const normalizeBoard = (board) => {
   const fallbackColumnId = validColumnIds[0] || defaultColumns[0].id;
   const normalizedTasks = Array.isArray(board.tasks)
     ? board.tasks.map(normalizeTask).filter(Boolean).map(task => ({
-        ...task,
-        columnId: validColumnIds.includes(task.columnId) ? task.columnId : fallbackColumnId
-      }))
+      ...task,
+      columnId: validColumnIds.includes(task.columnId) ? task.columnId : fallbackColumnId
+    }))
     : [];
 
   return {
@@ -427,7 +433,10 @@ export const kanbanReducer = (state, action) => {
                   priority: action.payload.priority || 'medium',
                   comments: [],
                   createdAt: now,
-                  updatedAt: now
+                  updatedAt: now,
+                  archived: false,
+                  archivedAt: null,
+                  previousColumnId: null
                 }
               ]
             };
@@ -489,6 +498,63 @@ export const kanbanReducer = (state, action) => {
       };
     }
 
+    case ARCHIVE_TASK: {
+      const { taskId } = action.payload;
+      const now = new Date().toISOString();
+      return {
+        ...state,
+        boards: state.boards.map(board => {
+          if (board.id !== state.activeBoardId) return board;
+
+          return {
+            ...board,
+            tasks: board.tasks.map(task =>
+              task.id === taskId
+                ? {
+                  ...task,
+                  archived: true,
+                  archivedAt: now,
+                  previousColumnId: task.columnId,
+                  updatedAt: now
+                }
+                : task
+            )
+          };
+        })
+      };
+    }
+
+    case RESTORE_TASK: {
+      const { taskId } = action.payload;
+      const now = new Date().toISOString();
+      return {
+        ...state,
+        boards: state.boards.map(board => {
+          if (board.id !== state.activeBoardId) return board;
+
+          const sortedColumns = getSortedColumns(board);
+          return {
+            ...board,
+            tasks: board.tasks.map(task => {
+              if (task.id !== taskId) return task;
+
+              // Get the previous column or fallback to first column
+              let restoredColumnId = task.previousColumnId || sortedColumns[0]?.id || 'todo';
+
+              return {
+                ...task,
+                archived: false,
+                archivedAt: null,
+                columnId: restoredColumnId,
+                previousColumnId: null,
+                updatedAt: now
+              };
+            })
+          };
+        })
+      };
+    }
+
     case ADD_TASK_COMMENT: {
       const { taskId, text } = action.payload;
       const trimmedText = typeof text === 'string' ? text.trim() : '';
@@ -508,17 +574,17 @@ export const kanbanReducer = (state, action) => {
             tasks: board.tasks.map(task =>
               task.id === taskId
                 ? {
-                    ...task,
-                    comments: [
-                      ...(Array.isArray(task.comments) ? task.comments : []),
-                      {
-                        id: Date.now().toString(),
-                        text: trimmedText,
-                        createdAt
-                      }
-                    ],
-                    updatedAt: createdAt
-                  }
+                  ...task,
+                  comments: [
+                    ...(Array.isArray(task.comments) ? task.comments : []),
+                    {
+                      id: Date.now().toString(),
+                      text: trimmedText,
+                      createdAt
+                    }
+                  ],
+                  updatedAt: createdAt
+                }
                 : task
             )
           };

@@ -10,6 +10,8 @@ import {
   MOVE_TASK_TO_COLUMN,
   DELETE_TASK,
   UPDATE_TASK,
+  ARCHIVE_TASK,
+  RESTORE_TASK,
   SET_ACTIVE_BOARD,
   ADD_BOARD,
   DELETE_BOARD,
@@ -22,13 +24,160 @@ import {
   getActiveBoard,
   getSortedColumns
 } from './state/kanbanState';
-import { getVisibleTasks, hasActiveFilters, createDefaultFilters } from './utils/filters';
+import { getVisibleTasks, hasActiveFilters, createDefaultFilters, getActiveTasks, getArchivedTasks } from './utils/filters';
 import { deleteState, loadState, saveState } from './storage/kanbanDB';
 import './App.css';
 
 const THEME_STORAGE_KEY = 'dimoflow-theme';
 const ONBOARDING_STORAGE_KEY = 'dimoflow-onboarding-seen';
 const MAX_IMPORT_BYTES = 1024 * 1024;
+const COMMENT_TEXTAREA_MIN_HEIGHT = 36;
+
+function LegalPanelShell({ title, onClose, children }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="presentation">
+      <section
+        className="task-modal data-modal legal-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${title.toLowerCase().replace(/\s+/g, '-')}-title`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="panel-header">
+          <div>
+            <div className="section-kicker">Legal</div>
+            <h2 id={`${title.toLowerCase().replace(/\s+/g, '-')}-title`}>{title}</h2>
+          </div>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={onClose}
+            title={`Close ${title.toLowerCase()} (Esc)`}
+            aria-label={`Close ${title}`}
+          >
+            Close
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function PrivacyPolicyPanel({ onClose }) {
+  return (
+    <LegalPanelShell title="Privacy Policy" onClose={onClose}>
+      <div className="help-section">
+        <div className="help-section-title">Overview</div>
+        <p className="help-copy">
+          DimoFlow is a fully local-first Kanban productivity application. All user data is stored directly in the browser using IndexedDB. No data is transmitted to any server.
+        </p>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Data Storage</div>
+        <ul className="help-list">
+          <li>All tasks, boards, settings, and preferences are stored locally in the user&apos;s browser.</li>
+          <li>Data persists using IndexedDB.</li>
+          <li>Clearing browser storage will permanently remove all data.</li>
+        </ul>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Data Collection</div>
+        <ul className="help-list">
+          <li>DimoFlow does NOT collect any personal data.</li>
+          <li>DimoFlow does NOT track users.</li>
+          <li>DimoFlow does NOT use cookies or analytics.</li>
+          <li>No data is sent to external services.</li>
+        </ul>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Third-Party Services</div>
+        <p className="help-copy">None used.</p>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">User Control</div>
+        <ul className="help-list">
+          <li>Users have full control over their data.</li>
+          <li>Export data (if implemented).</li>
+          <li>Delete data by clearing browser storage.</li>
+          <li>Reset application state at any time.</li>
+        </ul>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Data Security</div>
+        <ul className="help-list">
+          <li>Security depends on the user&apos;s device and browser.</li>
+          <li>No server-side storage exists.</li>
+        </ul>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Changes to This Policy</div>
+        <p className="help-copy">
+          This policy may be updated if new features are introduced, such as cloud sync. Users will be informed through the app.
+        </p>
+      </div>
+    </LegalPanelShell>
+  );
+}
+
+function TermsOfUsePanel({ onClose }) {
+  return (
+    <LegalPanelShell title="Terms of Use" onClose={onClose}>
+      <div className="help-section">
+        <div className="help-section-title">Acceptance</div>
+        <p className="help-copy">By using DimoFlow, you agree to these terms.</p>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Use of the Application</div>
+        <p className="help-copy">
+          DimoFlow is provided as a productivity tool for personal and professional task management.
+        </p>
+        <ul className="help-list">
+          <li>Not to use the app for illegal purposes.</li>
+          <li>Not to attempt to break or misuse functionality.</li>
+        </ul>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">No Warranty</div>
+        <p className="help-copy">DimoFlow is provided &quot;as is&quot; without warranties of any kind.</p>
+        <ul className="help-list">
+          <li>Uninterrupted availability is not guaranteed.</li>
+          <li>Data persistence is not guaranteed in all environments.</li>
+          <li>Compatibility across all browsers and devices is not guaranteed.</li>
+        </ul>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Data Responsibility</div>
+        <p className="help-copy">
+          All data is stored locally in the user&apos;s browser. Users are solely responsible for backing up their data and managing their browser storage.
+        </p>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Limitation of Liability</div>
+        <p className="help-copy">
+          The creator of DimoFlow is not responsible for data loss, browser storage clearing, or user misconfiguration.
+        </p>
+      </div>
+
+      <div className="help-section">
+        <div className="help-section-title">Changes</div>
+        <p className="help-copy">
+          Terms may be updated as the application evolves.
+        </p>
+      </div>
+    </LegalPanelShell>
+  );
+}
 
 function App() {
   const [isHydrated, setIsHydrated] = useState(false);
@@ -38,8 +187,12 @@ function App() {
   const toggleBtnRef = useRef(null);
   const searchInputRef = useRef(null);
   const taskTitleInputRef = useRef(null);
+  const commentTextareaRefs = useRef({});
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isArchivePanelOpen, setIsArchivePanelOpen] = useState(false);
+  const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isOnboardingVisible, setIsOnboardingVisible] = useState(() => {
     try {
@@ -85,6 +238,45 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSidebarOpen]);
+
+  useEffect(() => {
+    if (!isArchivePanelOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsArchivePanelOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isArchivePanelOpen]);
+
+  useEffect(() => {
+    if (!isHelpPanelOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsHelpPanelOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isHelpPanelOpen]);
+
+  useEffect(() => {
+    if (!activePanel) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setActivePanel(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activePanel]);
 
   useEffect(() => {
     if (!isOnboardingVisible) return undefined;
@@ -250,6 +442,20 @@ function App() {
   }, [activeBoardId, sortedColumns, filters.statusColumnId]);
 
   const closeSidebar = () => setIsSidebarOpen(false);
+  const closeHelpPanel = () => setIsHelpPanelOpen(false);
+  const closeLegalPanel = () => setActivePanel(null);
+  const openPrivacyPanel = () => {
+    setIsSidebarOpen(false);
+    setIsArchivePanelOpen(false);
+    setIsHelpPanelOpen(false);
+    setActivePanel(prev => (prev === 'privacy' ? null : 'privacy'));
+  };
+  const openTermsPanel = () => {
+    setIsSidebarOpen(false);
+    setIsArchivePanelOpen(false);
+    setIsHelpPanelOpen(false);
+    setActivePanel(prev => (prev === 'terms' ? null : 'terms'));
+  };
   const openTaskModal = () => setIsTaskModalOpen(true);
   const closeTaskModal = () => setIsTaskModalOpen(false);
   const toggleFilterBar = () => setIsFilterBarOpen(prev => !prev);
@@ -431,6 +637,20 @@ function App() {
     });
   };
 
+  const archiveTask = (taskId) => {
+    dispatch({
+      type: ARCHIVE_TASK,
+      payload: { taskId }
+    });
+  };
+
+  const restoreTask = (taskId) => {
+    dispatch({
+      type: RESTORE_TASK,
+      payload: { taskId }
+    });
+  };
+
   const startEditTask = (task) => {
     setEditingTaskId(task.id);
     setEditingTaskData({
@@ -475,7 +695,9 @@ function App() {
   };
 
   // Use centralized filter logic - single source of truth
-  const filteredTasks = getVisibleTasks(activeBoard?.tasks || [], filters);
+  const activeTasks = getActiveTasks(activeBoard?.tasks || []);
+  const filteredTasks = getVisibleTasks(activeTasks, filters);
+  const archivedTasks = getArchivedTasks(activeBoard?.tasks || []);
   const isFilterActive = hasActiveFilters(filters);
 
   const addTaskComment = (taskId) => {
@@ -491,6 +713,31 @@ function App() {
       ...prev,
       [taskId]: ''
     }));
+
+    requestAnimationFrame(() => {
+      const textarea = commentTextareaRefs.current[taskId];
+      if (textarea) {
+        textarea.style.height = `${COMMENT_TEXTAREA_MIN_HEIGHT}px`;
+        textarea.style.overflowY = 'hidden';
+      }
+    });
+  };
+
+  const handleTextareaResize = (el) => {
+    if (!el) return;
+
+    el.style.height = 'auto';
+
+    const maxHeight = 120;
+    const newHeight = el.scrollHeight;
+
+    if (newHeight > maxHeight) {
+      el.style.height = maxHeight + 'px';
+      el.style.overflowY = 'auto';
+    } else {
+      el.style.height = newHeight + 'px';
+      el.style.overflowY = 'hidden';
+    }
   };
 
   const handleCommentDraftChange = (taskId, value) => {
@@ -612,6 +859,12 @@ function App() {
   const importSummary = pendingImportState ? summarizeImportState(pendingImportState) : null;
 
   useEffect(() => {
+    Object.values(commentTextareaRefs.current).forEach((textarea) => {
+      handleTextareaResize(textarea);
+    });
+  }, []);
+
+  useEffect(() => {
     if (!isTaskModalOpen) return undefined;
 
     const frameId = window.requestAnimationFrame(() => {
@@ -649,6 +902,15 @@ function App() {
 
       if (isImportConfirmOpen || isResetConfirmOpen) return;
 
+      if (key === '/' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        setActivePanel(null);
+        setIsHelpPanelOpen(prev => !prev);
+        return;
+      }
+
+      if (activePanel) return;
+
       if (typing) return;
 
       if (key === 'n') {
@@ -658,7 +920,7 @@ function App() {
         return;
       }
 
-      if (key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (key === '/' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         setIsFilterBarOpen(true);
         window.requestAnimationFrame(() => {
@@ -676,7 +938,7 @@ function App() {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [canCreateTasks, isFilterBarOpen, isImportConfirmOpen, isOnboardingVisible, isResetConfirmOpen, isSidebarOpen, isTaskModalOpen]);
+  }, [activePanel, canCreateTasks, isFilterBarOpen, isHelpPanelOpen, isImportConfirmOpen, isOnboardingVisible, isResetConfirmOpen, isSidebarOpen, isTaskModalOpen]);
 
   return (
     <div className="app-shell">
@@ -735,11 +997,23 @@ function App() {
                 Skip
               </button>
             </div>
+
+            <div className="onboarding-legal">
+              <button type="button" className="sidebar-legal-link" onClick={openPrivacyPanel}>
+                Privacy Policy
+              </button>
+              <button type="button" className="sidebar-legal-link" onClick={openTermsPanel}>
+                Terms of Use
+              </button>
+            </div>
           </section>
         </div>
       )}
 
       {isSidebarOpen && <div className="sidebar-scrim" onClick={closeSidebar} />}
+      {isArchivePanelOpen && <div className="archive-scrim" onClick={() => setIsArchivePanelOpen(false)} />}
+      {isHelpPanelOpen && <div className="help-scrim" onClick={closeHelpPanel} />}
+      {activePanel && <div className="help-scrim" onClick={closeLegalPanel} />}
 
       <header className="topbar">
         <button
@@ -782,12 +1056,46 @@ function App() {
         >
           🎛
         </button>
+
+        <button
+          type="button"
+          className={`topbar-filter-action ${isArchivePanelOpen ? 'topbar-filter-action-active' : ''}`}
+          onClick={() => setIsArchivePanelOpen(prev => !prev)}
+          aria-label="Toggle archive"
+          title={`Archive (${archivedTasks.length})`}
+        >
+          📦
+        </button>
+
+        <button
+          type="button"
+          className={`topbar-filter-action ${isHelpPanelOpen ? 'topbar-filter-action-active' : ''}`}
+          onClick={() => {
+            setActivePanel(null);
+            setIsHelpPanelOpen(prev => !prev);
+          }}
+          aria-label="Toggle help"
+          title="Help and shortcuts (Shift+/)"
+        >
+          ?
+        </button>
       </header>
 
       <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
-        <div className="sidebar-brand">
-          <div className="sidebar-logo">DimoFlow</div>
-          <div className="sidebar-tag">Focused workspaces, simplified</div>
+        <div className="sidebar-header">
+          <div className="sidebar-brand">
+            <div className="sidebar-logo">DimoFlow</div>
+            <div className="sidebar-tag">Focused workspaces, simplified</div>
+          </div>
+          <button
+            type="button"
+            className="sidebar-close-btn"
+            onClick={closeSidebar}
+            title="Close sidebar (Esc)"
+            aria-label="Close sidebar"
+          >
+            ✕
+          </button>
         </div>
 
         <section className="sidebar-section">
@@ -890,6 +1198,14 @@ function App() {
               onChange={(e) => setIsEditMode(e.target.checked)}
             />
           </label>
+          <div className="sidebar-legal-links">
+            <button type="button" className="sidebar-legal-link" onClick={openPrivacyPanel}>
+              Privacy Policy
+            </button>
+            <button type="button" className="sidebar-legal-link" onClick={openTermsPanel}>
+              Terms of Use
+            </button>
+          </div>
         </section>
       </aside>
 
@@ -897,6 +1213,8 @@ function App() {
         className="main-content"
         onClick={() => {
           if (isSidebarOpen) closeSidebar();
+          if (isArchivePanelOpen) setIsArchivePanelOpen(false);
+          if (activePanel) closeLegalPanel();
         }}
       >
         {isTaskModalOpen && (
@@ -919,15 +1237,27 @@ function App() {
                   placeholder="Task title"
                   value={formData.title}
                   onChange={handleInputChange}
+                  onKeyDown={(e) => {
+                    if (e.ctrlKey && e.key === 'Enter') {
+                      e.preventDefault();
+                      addTask(e);
+                    }
+                  }}
                   ref={taskTitleInputRef}
                   required
                 />
                 <input
                   type="text"
                   name="description"
-                  placeholder="Description (optional)"
+                  placeholder="Description (optional) - Ctrl+Enter to save"
                   value={formData.description}
                   onChange={handleInputChange}
+                  onKeyDown={(e) => {
+                    if (e.ctrlKey && e.key === 'Enter') {
+                      e.preventDefault();
+                      addTask(e);
+                    }
+                  }}
                 />
                 <select
                   name="columnId"
@@ -951,6 +1281,12 @@ function App() {
                   value={formData.dueDate}
                   onChange={handleInputChange}
                   title="Due date"
+                  onKeyDown={(e) => {
+                    if (e.ctrlKey && e.key === 'Enter') {
+                      e.preventDefault();
+                      addTask(e);
+                    }
+                  }}
                 />
                 <select
                   name="priority"
@@ -1274,16 +1610,14 @@ function App() {
                             <>
                               <div className="task-card-head">
                                 <h4>{task.title}</h4>
-                                {isEditMode && (
-                                  <button
-                                    type="button"
-                                    className="edit-btn"
-                                    onClick={() => startEditTask(task)}
-                                    title="Edit task"
-                                  >
-                                    Edit
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  className="task-action-btn edit-task-btn"
+                                  onClick={() => startEditTask(task)}
+                                  title="Edit task"
+                                >
+                                  ✎
+                                </button>
                               </div>
 
                               {task.description && <p className="task-description">{task.description}</p>}
@@ -1321,11 +1655,26 @@ function App() {
                                   ))}
                                 </div>
                                 <div className="task-comment-form">
-                                  <input
-                                    type="text"
+                                  <textarea
+                                    ref={(element) => {
+                                      if (element) {
+                                        commentTextareaRefs.current[task.id] = element;
+                                        handleTextareaResize(element);
+                                      } else {
+                                        delete commentTextareaRefs.current[task.id];
+                                      }
+                                    }}
                                     value={commentDrafts[task.id] || ''}
                                     onChange={(e) => handleCommentDraftChange(task.id, e.target.value)}
-                                    placeholder="Add a comment"
+                                    onInput={(e) => handleTextareaResize(e.target)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        addTaskComment(task.id);
+                                      }
+                                    }}
+                                    placeholder="Add comment..."
+                                    rows="1"
                                   />
                                   <button type="button" onClick={() => addTaskComment(task.id)}>
                                     Comment
@@ -1352,15 +1701,22 @@ function App() {
                                 >
                                   &gt;
                                 </button>
-                                {isEditMode && (
-                                  <button
-                                    type="button"
-                                    className="delete-btn"
-                                    onClick={() => deleteTask(task.id)}
-                                  >
-                                    Delete
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  className="task-action-btn archive-task-btn"
+                                  onClick={() => archiveTask(task.id)}
+                                  title="Archive task"
+                                >
+                                  📦
+                                </button>
+                                <button
+                                  type="button"
+                                  className="task-action-btn delete-task-btn"
+                                  onClick={() => deleteTask(task.id)}
+                                  title="Delete task"
+                                >
+                                  🗑️
+                                </button>
                               </div>
                             </>
                           )}
@@ -1374,6 +1730,105 @@ function App() {
           )}
         </section>
       </main>
+
+      <section className={`archive-panel ${isArchivePanelOpen ? 'archive-panel-open' : ''}`}>
+        <div className="archive-panel-header">
+          <h3>Archive ({archivedTasks.length})</h3>
+          <button
+            type="button"
+            className="archive-close-btn"
+            onClick={() => setIsArchivePanelOpen(false)}
+            title="Close archive (Esc)"
+            aria-label="Close archive"
+          >
+            ✕
+          </button>
+        </div>
+
+        {archivedTasks.length === 0 ? (
+          <div className="empty-state">
+            <p>No archived tasks</p>
+          </div>
+        ) : (
+          <div className="archive-task-list">
+            {archivedTasks.map(task => (
+              <div key={task.id} className="archive-task-item">
+                <div className="archive-task-info">
+                  <h4>{task.title}</h4>
+                  <p className="archive-task-meta">
+                    Archived {task.archivedAt ? new Date(task.archivedAt).toLocaleDateString() : 'unknown'}
+                  </p>
+                  {task.description && <p className="archive-task-desc">{task.description}</p>}
+                </div>
+                <div className="archive-task-actions">
+                  <button
+                    type="button"
+                    className="restore-btn"
+                    onClick={() => restoreTask(task.id)}
+                    title="Restore task"
+                  >
+                    Restore
+                  </button>
+                  <button
+                    type="button"
+                    className="delete-btn"
+                    onClick={() => deleteTask(task.id)}
+                    title="Delete permanently"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {activePanel === 'privacy' && <PrivacyPolicyPanel onClose={closeLegalPanel} />}
+      {activePanel === 'terms' && <TermsOfUsePanel onClose={closeLegalPanel} />}
+
+      <section className={`help-panel ${isHelpPanelOpen ? 'help-panel-open' : ''}`}>
+        <div className="archive-panel-header">
+          <h3>Help</h3>
+          <button
+            type="button"
+            className="archive-close-btn"
+            onClick={closeHelpPanel}
+            title="Close help (Esc)"
+            aria-label="Close help"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="help-section">
+          <div className="help-section-title">Shortcuts</div>
+          <ul className="help-list">
+            <li><strong>Shift + /</strong> Open help</li>
+            <li><strong>/</strong> Open filters</li>
+            <li><strong>N</strong> New task</li>
+            <li><strong>E</strong> Toggle edit mode</li>
+            <li><strong>Esc</strong> Close panels</li>
+          </ul>
+        </div>
+
+        <div className="help-section">
+          <div className="help-section-title">Quick Usage</div>
+          <ul className="help-list">
+            <li>Create a board from the sidebar.</li>
+            <li>Add tasks with the top bar shortcut.</li>
+            <li>Drag tasks between columns.</li>
+            <li>Use Archive for completed work.</li>
+          </ul>
+        </div>
+
+        <div className="help-section">
+          <div className="help-section-title">Concepts</div>
+          <p className="help-copy">
+            Boards hold columns. Columns hold tasks. Tasks can carry comments, due dates, and priority.
+          </p>
+        </div>
+      </section>
     </div>
   );
 }
