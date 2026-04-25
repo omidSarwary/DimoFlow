@@ -1,114 +1,189 @@
 # DimoFlow
 
-Modern local-first Kanban productivity system
+**Modern local-first Kanban productivity system**
 
-DimoFlow is a clean, offline-ready Kanban app built for structured personal productivity. It uses a local-first architecture, supports multiple boards, and keeps the experience fast, simple, and predictable.
-
-## Demo / Preview
-
-<img width="1884" height="896" alt="image" src="https://github.com/user-attachments/assets/d1f7ed6a-2760-452f-957b-54e7c60cc43c" />
+🌐 Live Demo: https://dimoflow.omidium.com/
 
 
-Works fully offline in the browser.
+## Overview
+
+DimoFlow is a fast, offline-first Kanban application designed for structured personal productivity. It runs entirely in the browser using a local-first architecture, with no backend or cloud dependency.
+
+The focus is on speed, simplicity, and full data ownership, while still providing advanced workflow features such as multi-board management, custom columns, task archiving, filtering, and structured task organization.
+
+
 
 ## Features
 
-### Core Features
+### Workspaces (Boards)
+- Multiple independent workspaces
+- Create, rename, and delete workspaces
+- Each workspace has its own data scope
+- Workspace-specific task archive
 
-- Boards (workspaces)
-- Custom columns per board
-- Task management: create, move, delete, comment
-- Task filtering system
 
-### Productivity Features
 
-- Search with debounce
-- Priority + due date filtering
-- Keyboard shortcuts
-- Theme switching
+### Column System
+- Custom columns per workspace
+- Create, rename, move, and delete columns
+- Edit mode for structural changes
+- Flexible Kanban layouts per workflow
 
-### Data & Persistence
 
-- Fully local-first
-- IndexedDB storage
-- Auto-save state
-- Import / export JSON backup
 
-### UX Features
+### Task Management
+- Create tasks with:
+  - Title
+  - Description
+  - Importance (priority)
+  - Auto-generated creation date
+  - Optional due date
+- Edit and delete tasks
+- Add comments per task
+- Move tasks via:
+  - Drag & drop
+  - Button controls
 
-- First-time onboarding screen
-- Responsive design
-- Collapsible sidebar & filters
-- Drag and drop tasks
 
-## Tech Stack
 
-- React
-- JavaScript
-- IndexedDB via a custom wrapper
-- CSS
+### Archive System
+- Archive tasks per workspace
+- Restore archived tasks
+- Restored tasks return to last active column
+
+
+
+### Filtering & Sorting
+- Search tasks by title
+- Filter by priority
+- Filter by due date
+- Filter by status
+
+
+
+### UI & Themes
+- Light theme
+- Dark theme
+- Midnight theme
+- Responsive layout
+- Collapsible sidebar navigation
+
+
+
+### Settings & Controls
+- Edit mode toggle:
+  - Enables/disables board editing features
+- Workspace management via sidebar
+- Column management tools
+- Board rename and delete options
+- JSON export/import system
+- Reset workspace functionality
+- Built-in help section
+
+
+
+### Keyboard Shortcuts
+- `E` → Toggle edit mode
+- `N` → New task
+- `Esc` → Close panels / cancel actions  
+- `/` → Focus search  
+- `Enter` → Submit comment and changes
+- `Shift + Enter` → New line in comment input  
+
+
+
+## Data & Storage
+
+- Fully local-first architecture
+- No backend or authentication required
+- Automatic saving on every change
+- Persistent storage using IndexedDB
+- Import/export full workspace as JSON backup
+
+
 
 ## Architecture Overview
 
-DimoFlow uses a reducer-based state model for predictable updates and easier scaling.
+DimoFlow is designed with a clean separation of concerns:
 
-- `src/state/kanbanState.js` holds the centralized board, column, and task logic.
-- `src/storage/kanbanDB.js` handles IndexedDB persistence through a small wrapper.
-- UI, state, and storage are kept separate so the app stays easier to maintain and extend.
+- Centralized reducer-based state management for tasks, columns, and boards
+- Dedicated IndexedDB persistence layer
+- UI layer separated from state and storage logic
 
-## Installation Instructions
+Key modules:
 
-Recommended: Node.js LTS
+- `src/state/kanbanState.js` → Core application state logic (reducers)
+- `src/storage/kanbanDB.js` → IndexedDB persistence layer
+- UI components → Rendering and interaction layer
 
+This structure ensures predictability, scalability, and maintainability.
+
+
+
+## Tech Stack
+
+- React (Create React App)
+- JavaScript (ES6+)
+- IndexedDB (custom wrapper)
+- CSS (custom styling system)
+
+
+## Installation
+
+### Clone repository
 ```bash
 git clone https://github.com/omidSarwary/DimoFlow.git
-cd dimoflow
+cd DimoFlow
+```
+### Install dependencies
+```bash
 npm install
+```
+### Start development server
+```bash
 npm start
 ```
-
-Build for production:
-
+### Production Build
 ```bash
 npm run build
 ```
+## Screenshots
 
-## Usage Guide
+<img width="1877" height="714" alt="image" src="https://github.com/user-attachments/assets/f9aa9969-5986-474a-855c-424271931cdc" />
 
-1. Create a board to organize a workspace.
-2. Add tasks to a board column.
-3. Move tasks between columns with drag and drop or button controls.
-4. Use filters to search by title, priority, due date, or status.
-5. Switch themes for a preferred visual style.
-6. Your changes auto-save locally in the browser.
+<img width="341" height="905" alt="image" src="https://github.com/user-attachments/assets/2bd408e3-0173-44e3-ac45-eeb0682139ac" />
 
-### Keyboard Shortcuts
-
-- `/` Search
-- `N` New task
-- `E` Edit mode
-- `Esc` Close panels
-
-
-## Key Design Decisions
-
-- Local-first keeps the app offline-friendly and fast.
-- IndexedDB removes any backend dependency while still persisting user data.
-- Reducer-based state makes behavior more predictable and easier to extend across boards, columns, and tasks.
+<img width="370" height="898" alt="image" src="https://github.com/user-attachments/assets/f0cff239-537e-4c47-ad40-d97bf94655c9" />
 
 ## Project Highlights
 
-- Full local-first architecture
-- Scalable multi-board system
-- Custom persistence layer
-- Production-style UX with onboarding, themes, and filters
+- Fully local-first architecture (no backend dependency)
+- Multi-workspace Kanban system
+- Custom persistence layer with IndexedDB
+- Advanced task lifecycle (create → edit → move → archive → restore)
+- Clean separation of state, storage, and UI layers
+- Productivity-focused UX with themes and edit mode system
 
 ## Future Improvements
 
-- Cloud sync
-- Collaboration mode
-- Mobile app version
+- Cloud synchronization (optional future extension)
+- Multi-user collaboration mode
+- Mobile application version
+- Cross-device sync
+- Advanced analytics dashboard
+
+## License
+
+This project is licensed under the MIT License.
 
 ## Closing
 
-Built as a portfolio project focusing on frontend architecture and UX design.
+DimoFlow was built as a personal productivity system focusing on:
+
+- Local-first architecture
+- High performance
+- Clean UX design
+- Scalable frontend engineering patterns
+
+
+
