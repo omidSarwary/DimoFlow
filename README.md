@@ -6,7 +6,8 @@ DimoFlow is a clean, offline-ready Kanban app built for structured personal prod
 
 ## Demo / Preview
 
-Add screenshot here
+<img width="1884" height="896" alt="image" src="https://github.com/user-attachments/assets/d1f7ed6a-2760-452f-957b-54e7c60cc43c" />
+
 
 Works fully offline in the browser.
 
@@ -16,7 +17,7 @@ Works fully offline in the browser.
 
 - Boards (workspaces)
 - Custom columns per board
-- Task management: create, move, delete
+- Task management: create, move, delete, comment
 - Task filtering system
 
 ### Productivity Features
@@ -38,6 +39,7 @@ Works fully offline in the browser.
 - First-time onboarding screen
 - Responsive design
 - Collapsible sidebar & filters
+- Drag and drop tasks
 
 ## Tech Stack
 
@@ -96,8 +98,6 @@ npm run build
 
 ## Project Highlights
 
-Why this project stands out:
-
 - Full local-first architecture
 - Scalable multi-board system
 - Custom persistence layer
@@ -105,7 +105,6 @@ Why this project stands out:
 
 ## Future Improvements
 
-- Drag and drop improvements
 - Cloud sync
 - Collaboration mode
 - Mobile app version
