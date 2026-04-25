@@ -59,7 +59,7 @@ DimoFlow uses a reducer-based state model for predictable updates and easier sca
 Recommended: Node.js LTS
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/omidSarwary/DimoFlow.git
 cd dimoflow
 npm install
 npm start
@@ -86,6 +86,7 @@ npm run build
 - `N` New task
 - `E` Edit mode
 - `Esc` Close panels
+
 
 ## Key Design Decisions
 
