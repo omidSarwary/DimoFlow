@@ -1,3 +1,6 @@
+# Build 
+build/
+
 # Logs
 logs
 *.log
@@ -141,3 +144,4 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
